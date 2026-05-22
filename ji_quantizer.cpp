@@ -21,8 +21,9 @@ static constexpr int   kScaleNotes    = 12;
 static constexpr int   kUserNotes     = 11;  // notes 1-11 (note 0 = 1/1 always)
 static constexpr int   kMaxChannels   = 4;
 static constexpr int   kMaxRatioVal   = 256;
-static constexpr float kGateThreshold = 2.5f;
-static constexpr float kGateHighV     = 5.0f;
+static constexpr float kGateOnThreshold  = 2.5f; // gate opens above this
+static constexpr float kGateOffThreshold = 0.5f; // gate closes below this (hysteresis)
+static constexpr float kGateHighV        = 5.0f;
 
 // Display (256x64, kNT_textNormal = 8px tall)
 static constexpr int kDisplayCols = 4;
@@ -375,15 +376,23 @@ static void step(_NT_algorithm* self, float* bus, int numFramesBy4) {
         float*       cvOut  = bus + cvOutBus * numFrames;
         const float* gateIn = (inputGate && gateInBus >= 0) ? bus + gateInBus * numFrames : nullptr;
 
-        int   prevDegree = d->currentDegree[c];
-        float prevGate   = d->prevGate[c];
+        int   prevDegree  = d->currentDegree[c];
+        float gateState   = d->prevGate[c]; // 0.0 = low, 1.0 = high
 
         for (int i = 0; i < numFrames; ++i) {
             float g = gateIn ? gateIn[i] : 0.0f;
+            bool gateRising = false;
 
-            // Trigger: continuous if no input gate, otherwise on rising edge
-            bool triggered = !inputGate || !gateIn
-                             || (g >= kGateThreshold && prevGate < kGateThreshold);
+            if (gateIn) {
+                if (gateState < 0.5f && g >= kGateOnThreshold) {
+                    gateState  = 1.0f; // gate opened
+                    gateRising = true;
+                } else if (gateState >= 0.5f && g < kGateOffThreshold) {
+                    gateState = 0.0f;  // gate closed
+                }
+            }
+
+            bool triggered = !inputGate || !gateIn || gateRising;
 
             if (triggered) {
                 int degree = 0;
@@ -392,10 +401,9 @@ static void step(_NT_algorithm* self, float* bus, int numFramesBy4) {
             }
 
             cvOut[i] = d->heldOutputV[c];
-            prevGate = g;
         }
 
-        d->prevGate[c] = prevGate;
+        d->prevGate[c] = gateState;
 
         // Gate output
         if (outputGate && gateOutBus >= 0) {
