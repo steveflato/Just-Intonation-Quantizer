@@ -8,9 +8,9 @@ A [Disting NT](https://expert-sleepers.co.uk/distingnt.html) community plugin th
 
 ## Features
 
-- Fixed 12-note just intonation scale
+- Variable 3–43 note just intonation scale (set via Specifications)
 - Note 0 is always 1/1 (hardcoded)
-- Notes 1–11 are fully user-defined via numerator/denominator ratios
+- Notes 1–(N−1) are fully user-defined via numerator/denominator ratios
 - Scale is automatically sorted low to high regardless of entry order
 - Page labels update live to show the current ratio (e.g. `N1: 3/2`)
 - Up to 4 independent CV channels (set via Specifications)
@@ -18,9 +18,13 @@ A [Disting NT](https://expert-sleepers.co.uk/distingnt.html) community plugin th
 - Per-channel **Output Gate**: pass gate through (when Input Gate on), or trigger on note change
 - Configurable root offset (±24 semitones)
 
-## Default Scale
+## Scale Size
 
-Kraig Grady's [Centaur](http://anaphoria.com/centaur.html) scale:
+The **Notes** specification (3–43, default 12) controls how many notes the scale has. Set it in the Specifications menu before loading the plugin.
+
+### Default scales by note count
+
+**12 notes (default)** — Kraig Grady's [Centaur](http://anaphoria.com/centaur.html) scale:
 
 | Note | Ratio |
 |------|-------|
@@ -36,6 +40,8 @@ Kraig Grady's [Centaur](http://anaphoria.com/centaur.html) scale:
 | 9    | 5/3   |
 | 10   | 7/4   |
 | 11   | 15/8  |
+
+**43 notes** — Harry Partch's 43-tone scale. The Centaur ratios occupy slots 1–11; the remaining 31 Partch ratios fill slots 12–42 in ascending pitch order, giving the complete Partch scale as a starting point.
 
 ## Building
 
