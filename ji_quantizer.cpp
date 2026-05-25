@@ -4,8 +4,8 @@
  * Author: Safie Flato
  * Category: Utility
  *
- * Fixed 12-note just intonation scale. Note 0 is always 1/1.
- * Notes 1-11 are user-defined ratios (numerator / denominator).
+ * Variable 3-43 note just intonation scale. Note 0 is always 1/1.
+ * Notes 1-(N-1) are user-defined ratios (numerator / denominator).
  * Supports up to 4 channels of CV I/O with independent gate options.
  */
 
@@ -17,10 +17,12 @@
 // ============================================================
 // Constants
 // ============================================================
-static constexpr int   kScaleNotes    = 12;
-static constexpr int   kUserNotes     = 11;  // notes 1-11 (note 0 = 1/1 always)
-static constexpr int   kMaxChannels   = 4;
-static constexpr int   kMaxRatioVal   = 256;
+static constexpr int   kMaxScaleNotes    = 43;
+static constexpr int   kMaxUserNotes     = 42;  // kMaxScaleNotes - 1
+static constexpr int   kMinNotes         = 3;
+static constexpr int   kDefaultNotes     = 12;
+static constexpr int   kMaxChannels      = 4;
+static constexpr int   kMaxRatioVal      = 256;
 static constexpr float kGateOnThreshold  = 2.5f; // gate opens above this
 static constexpr float kGateOffThreshold = 0.5f; // gate closes below this (hysteresis)
 static constexpr float kGateHighV        = 5.0f;
@@ -32,17 +34,25 @@ static constexpr int kDisplayRows = 3;
 static constexpr int kRowHeight   = 9;
 static constexpr int kRatioStartY = 26;
 
-static const char* const kNotePageNames[kUserNotes] = {
+static const char* const kNotePageNames[kMaxUserNotes] = {
     "Note 1",  "Note 2",  "Note 3",  "Note 4",  "Note 5",
-    "Note 6",  "Note 7",  "Note 8",  "Note 9",  "Note 10", "Note 11"
+    "Note 6",  "Note 7",  "Note 8",  "Note 9",  "Note 10",
+    "Note 11", "Note 12", "Note 13", "Note 14", "Note 15",
+    "Note 16", "Note 17", "Note 18", "Note 19", "Note 20",
+    "Note 21", "Note 22", "Note 23", "Note 24", "Note 25",
+    "Note 26", "Note 27", "Note 28", "Note 29", "Note 30",
+    "Note 31", "Note 32", "Note 33", "Note 34", "Note 35",
+    "Note 36", "Note 37", "Note 38", "Note 39", "Note 40",
+    "Note 41", "Note 42",
 };
 
 // ============================================================
 // Specifications
 // ============================================================
-enum { kSpecChannels };
+enum { kSpecChannels, kSpecNotes };
 static const _NT_specification specifications[] = {
-    { .name = "Channels", .min = 1, .max = kMaxChannels, .def = 1, .type = kNT_typeGeneric },
+    { .name = "Channels", .min = 1,         .max = kMaxChannels,   .def = 1,            .type = kNT_typeGeneric },
+    { .name = "Notes",    .min = kMinNotes,  .max = kMaxScaleNotes, .def = kDefaultNotes, .type = kNT_typeGeneric },
 };
 
 // ============================================================
@@ -67,26 +77,38 @@ enum {
 // ============================================================
 // Index helpers
 // ============================================================
-static inline int chBase(int ch)       { return kNumSharedParams + ch * kParamsPerChannel; }
-static inline int ratioBase(int numCh) { return kNumSharedParams + numCh * kParamsPerChannel; }
-static inline int numIdx(int numCh, int i) { return ratioBase(numCh) + i * 2; }
-static inline int denIdx(int numCh, int i) { return ratioBase(numCh) + i * 2 + 1; }
-static inline int totalParams(int numCh) { return kNumSharedParams + numCh * kParamsPerChannel + kUserNotes * 2; }
-static inline int totalPages(int numCh)  { return 1 + numCh + kUserNotes; }
+static inline int chBase(int ch)                     { return kNumSharedParams + ch * kParamsPerChannel; }
+static inline int ratioBase(int numCh)               { return kNumSharedParams + numCh * kParamsPerChannel; }
+static inline int numIdx(int numCh, int i)           { return ratioBase(numCh) + i * 2; }
+static inline int denIdx(int numCh, int i)           { return ratioBase(numCh) + i * 2 + 1; }
+static inline int totalParams(int numCh, int numUN)  { return kNumSharedParams + numCh * kParamsPerChannel + numUN * 2; }
+static inline int totalPages(int numCh, int numUN)   { return 1 + numCh + numUN; }
 
 // ============================================================
-// Defaults: Kraig Grady's Centaur scale (notes 1-11)
-// Full scale: 1/1, 21/20, 9/8, 7/6, 5/4, 4/3, 7/5, 3/2, 14/9, 5/3, 7/4, 15/8
+// Defaults
+// Slots  0-10: Kraig Grady's Centaur scale (preserves existing behavior at 12 notes)
+// Slots 11-41: Harry Partch's 43-tone additions, sorted ascending pitch
+//              (selecting 43 notes gives the full Partch scale)
 // ============================================================
-static const int16_t kDefNum[kUserNotes] = { 21,  9,  7,  5,  4,  7,  3, 14,  5,  7, 15 };
-static const int16_t kDefDen[kUserNotes] = { 20,  8,  6,  4,  3,  5,  2,  9,  3,  4,  8 };
+static const int16_t kDefNum[kMaxUserNotes] = {
+    21,  9,  7,  5,  4,  7,  3, 14,  5,  7, 15,   // Centaur 1-11
+    81, 33, 16, 12, 11, 10,  8, 32,  6, 11, 14,    // Partch: 81/80 .. 14/11
+     9, 21, 27, 11, 10, 16, 40, 32, 11,  8, 18,    // Partch:  9/7  .. 18/11
+    27, 12, 16,  9, 20, 11, 40, 64, 160,            // Partch: 27/16 .. 160/81
+};
+static const int16_t kDefDen[kMaxUserNotes] = {
+    20,  8,  6,  4,  3,  5,  2,  9,  3,  4,  8,   // Centaur 1-11
+    80, 32, 15, 11, 10,  9,  7, 27,  5,  9, 11,    // Partch: 81/80 .. 14/11
+     7, 16, 20,  8,  7, 11, 27, 21,  7,  5, 11,    // Partch:  9/7  .. 18/11
+    16,  7,  9,  5, 11,  6, 21, 33,  81,            // Partch: 27/16 .. 160/81
+};
 
 // ============================================================
 // DTC
 // ============================================================
 struct _jiQuantizer_DTC {
-    float scalePitch[kScaleNotes];   // sorted V/oct offsets in [0, 1)
-    int   scaleSrcIdx[kScaleNotes];  // -1 = hardcoded 1/1, else index into notes 1-11
+    float scalePitch[kMaxScaleNotes];
+    int   scaleSrcIdx[kMaxScaleNotes];
     int   numValidNotes;
 
     float rootOffsetV;
@@ -117,8 +139,9 @@ struct _jiQuantizerAlgorithm : public _NT_algorithm {
 
     _jiQuantizer_DTC*  dtc;
     int                numChannels;
+    int                numUserNotes;  // = Notes spec - 1
 
-    char noteNameBufs[kUserNotes][16]; // live page name strings, e.g. "N1: 3/2"
+    char noteNameBufs[kMaxUserNotes][16]; // live page name strings, e.g. "N1: 3/2"
 };
 
 // ============================================================
@@ -127,8 +150,8 @@ struct _jiQuantizerAlgorithm : public _NT_algorithm {
 static void buildScaleTable(_jiQuantizerAlgorithm* a) {
     _jiQuantizer_DTC* d = a->dtc;
 
-    float pitches[kScaleNotes];
-    int   srcIdx[kScaleNotes];
+    float pitches[kMaxScaleNotes];
+    int   srcIdx[kMaxScaleNotes];
     int   count = 0;
 
     // Note 0: always 1/1 = 0.0 V/oct
@@ -136,8 +159,8 @@ static void buildScaleTable(_jiQuantizerAlgorithm* a) {
     srcIdx[0]  = -1;
     count = 1;
 
-    // Notes 1-11: user-defined
-    for (int i = 0; i < kUserNotes; ++i) {
+    // Notes 1-(numUserNotes): user-defined
+    for (int i = 0; i < a->numUserNotes; ++i) {
         int n   = a->v[numIdx(a->numChannels, i)];
         int den = a->v[denIdx(a->numChannels, i)];
         if (n   <= 0) n   = 1;
@@ -184,7 +207,7 @@ static void buildScaleTable(_jiQuantizerAlgorithm* a) {
 static void updateNotePageNames(_jiQuantizerAlgorithm* a, bool notify) {
     int ch = a->numChannels;
 
-    for (int i = 0; i < kUserNotes; ++i) {
+    for (int i = 0; i < a->numUserNotes; ++i) {
         int num = a->v[numIdx(ch, i)];
         int den = a->v[denIdx(ch, i)];
 
@@ -233,12 +256,14 @@ static float quantizePitch(const _jiQuantizer_DTC* d, float inputV, int* outDegr
 // calculateRequirements
 // ============================================================
 static void calculateRequirements(_NT_algorithmRequirements& req, const int32_t* specs) {
-    int ch  = specs ? specs[kSpecChannels] : 1;
-    int np  = totalParams(ch);
-    int npg = totalPages(ch);
+    int ch   = specs ? specs[kSpecChannels] : 1;
+    int numN = specs ? specs[kSpecNotes]    : kDefaultNotes;
+    int numUN = numN - 1;
+    int np    = totalParams(ch, numUN);
+    int npg   = totalPages(ch, numUN);
 
-    // Page array bytes: scale(1) + routing(ch*6) + note pages(kUserNotes*2)
-    int pageBytes = 1 + ch * kParamsPerChannel + kUserNotes * 2;
+    // Page array bytes: scale(1) + routing(ch*6) + note pages(numUN*2)
+    int pageBytes = 1 + ch * kParamsPerChannel + numUN * 2;
 
     req.numParameters = np;
     req.sram = sizeof(_jiQuantizerAlgorithm)
@@ -256,19 +281,22 @@ static void calculateRequirements(_NT_algorithmRequirements& req, const int32_t*
 static _NT_algorithm* construct(const _NT_algorithmMemoryPtrs& ptrs,
                                 const _NT_algorithmRequirements&,
                                 const int32_t* specs) {
-    int ch  = specs ? specs[kSpecChannels] : 1;
-    int np  = totalParams(ch);
-    int npg = totalPages(ch);
+    int ch   = specs ? specs[kSpecChannels] : 1;
+    int numN = specs ? specs[kSpecNotes]    : kDefaultNotes;
+    int numUN = numN - 1;
+    int np    = totalParams(ch, numUN);
+    int npg   = totalPages(ch, numUN);
 
     _jiQuantizerAlgorithm* alg = new (ptrs.sram) _jiQuantizerAlgorithm();
     uint8_t* mem = (uint8_t*)ptrs.sram + sizeof(_jiQuantizerAlgorithm);
 
-    alg->params      = (_NT_parameter*)mem;     mem += np  * sizeof(_NT_parameter);
-    alg->numParams   = np;
-    alg->pages       = (_NT_parameterPage*)mem; mem += npg * sizeof(_NT_parameterPage);
-    alg->numPages    = npg;
-    alg->pageArrays  = mem;
-    alg->numChannels = ch;
+    alg->params       = (_NT_parameter*)mem;     mem += np  * sizeof(_NT_parameter);
+    alg->numParams    = np;
+    alg->pages        = (_NT_parameterPage*)mem; mem += npg * sizeof(_NT_parameterPage);
+    alg->numPages     = npg;
+    alg->pageArrays   = mem;
+    alg->numChannels  = ch;
+    alg->numUserNotes = numUN;
 
     // ---- Shared params ----
     alg->params[kParamRoot] = { .name = "Root", .min = -24, .max = 24, .def = 0,
@@ -291,9 +319,9 @@ static _NT_algorithm* construct(const _NT_algorithmMemoryPtrs& ptrs,
                                           .unit = kNT_unitNone,        .scaling = 0, .enumStrings = NULL };
     }
 
-    // ---- Ratio params: notes 1-11 ----
+    // ---- Ratio params: notes 1-numUN ----
     int rb = ratioBase(ch);
-    for (int i = 0; i < kUserNotes; ++i) {
+    for (int i = 0; i < numUN; ++i) {
         alg->params[rb + i*2]   = { .name = "Numerator",   .min = 1, .max = kMaxRatioVal, .def = kDefNum[i],
                                     .unit = kNT_unitNone, .scaling = 0, .enumStrings = NULL };
         alg->params[rb + i*2+1] = { .name = "Denominator", .min = 1, .max = kMaxRatioVal, .def = kDefDen[i],
@@ -308,7 +336,7 @@ static _NT_algorithm* construct(const _NT_algorithmMemoryPtrs& ptrs,
     alg->pages[0] = { .name = "Scale", .numParams = 1, .params = pa };
     pa += 1;
 
-    // Pages 1..ch: Per-channel routing (CV In/Out, Gate In/Out, Input Gate, Output Gate)
+    // Pages 1..ch: Per-channel routing
     for (int c = 0; c < ch; ++c) {
         int b = chBase(c);
         for (int p = 0; p < kParamsPerChannel; ++p) pa[p] = (uint8_t)(b + p);
@@ -316,8 +344,8 @@ static _NT_algorithm* construct(const _NT_algorithmMemoryPtrs& ptrs,
         pa += kParamsPerChannel;
     }
 
-    // Pages (1+ch)..(11+ch): one page per user note
-    for (int i = 0; i < kUserNotes; ++i) {
+    // Pages (1+ch)..(numUN+ch): one page per user note
+    for (int i = 0; i < numUN; ++i) {
         pa[0] = (uint8_t)(rb + i*2);
         pa[1] = (uint8_t)(rb + i*2 + 1);
         alg->pages[1 + ch + i] = { .name = kNotePageNames[i], .numParams = 2, .params = pa };
@@ -554,7 +582,7 @@ static bool draw(_NT_algorithm* self) {
 static const _NT_factory factory = {
     .guid                        = NT_MULTICHAR('S', 'F', 'J', 'z'),
     .name                        = "JI Quantizer",
-    .description                 = "12-note just intonation quantizer with user-defined ratios",
+    .description                 = "3-43 note just intonation quantizer with user-defined ratios",
     .numSpecifications           = ARRAY_SIZE(specifications),
     .specifications              = specifications,
     .calculateStaticRequirements = NULL,
